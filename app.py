@@ -162,8 +162,8 @@ def display_summary():
 
 # 🧠 Main logic
 if not st.session_state.quiz_started:
-    st.title("🧠 Interview Preparation App")
-    st.session_state.topic = st.selectbox("📚 Select a topic", ['Deep Learning', 'Data Science', 'Machine Learning', 'Generative AI'])
+    st.title("Shivaksh Interview Prep")
+    st.session_state.topic = st.selectbox("📚 Choose your Domain", ['Deep Learning', 'Data Science', 'Machine Learning', 'Generative AI'])
     st.session_state.difficulty_level = st.selectbox("🎯 Difficulty", ['Easy', 'Intermediate', 'Advanced'])
     st.session_state.num_questions = st.slider("🔢 Number of questions", 5, 30, 10, step=5)
     if st.button("🚀 Start Quiz"):
