@@ -20,7 +20,7 @@ class MCQGenerator:
 
     def chat_model(self, temperature: float):
         return ChatGroq(
-            model="llama3-70b-8192",
+            model="llama-3.3-70b-versatile",
             api_key=self.api_key,
             temperature=temperature,
             max_tokens=8000,
