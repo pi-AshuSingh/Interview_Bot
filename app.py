@@ -10,6 +10,10 @@ st.set_page_config(page_title="Interview Prep Pro", page_icon="🚀", layout="ce
 GROQ_API = st.secrets.get("GROQ_API", "")
 GOOGLE_API = st.secrets.get("GOOGLE_API", "")
 
+if not GROQ_API:
+    st.error("🔑 **GROQ_API key is missing!** If you are on Streamlit Cloud, please add it to your app's Advanced Settings > Secrets.", icon="🛑")
+    st.stop()
+
 # 🚀 Initialize MCQ generator
 mcq_generator = MCQGenerator(GROQ_API)
 
