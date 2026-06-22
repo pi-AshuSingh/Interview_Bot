@@ -20,7 +20,7 @@ class MCQGenerator:
 
     def chat_model(self, temperature: float):
         return GoogleGenerativeAI(
-            model="gemini-2.0-flash-exp",
+            model="gemini-1.5-flash",
             api_key=self.api_key,
             temperature=temperature,
             max_tokens=8000,
