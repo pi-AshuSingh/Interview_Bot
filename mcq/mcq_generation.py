@@ -11,8 +11,9 @@ class Option(BaseModel):
     isCorrect: bool = Field(description="Indicator if the option is correct or not")
 
 class MCQ(BaseModel):
-    question: str = Field(description="The statement of the question")
+    question: str = Field(description="The statement of the question. Include Markdown code snippets if relevant.")
     options: list[Option] = Field(description="List of answer options with correctness indicated")
+    explanation: str = Field(description="A concise 2-sentence explanation of why the correct option is right, and why the distractors are wrong.")
 
 class MCQGenerator:
     def __init__(self, api_key: str):
@@ -43,8 +44,9 @@ class MCQGenerator:
 
         **Instructions:** Generate {number_of_questions} multiple-choice questions (MCQ) on the topic of {topic} at the specified difficulty level. 
                         The questions should have four options, with one correct answer and three distractors. 
-                        Ensure the questions are clear, concise, and relevant to the Topic. 
-                        Return the MCQ in JSON format with the following structure:
+                        Whenever possible, include realistic code snippets in the question text using Markdown formatting (e.g. ```python ... ```).
+                        Provide a concise explanation for the correct answer.
+                        Return a list of MCQs in JSON format.
                       
         ]
 
@@ -56,7 +58,10 @@ class MCQGenerator:
             HumanMessagePromptTemplate.from_template(human_message_content)
         ])
 
-        parser = JsonOutputParser(pydantic_object=MCQ)
+        class MCQList(BaseModel):
+            questions: list[MCQ]
+            
+        parser = JsonOutputParser(pydantic_object=MCQList)
 
         return self._completion(prompt_template, level, topic, number_of_questions, parser)
 
@@ -73,5 +78,4 @@ class MCQGenerator:
         }
 
         response = llm_chain.invoke(parameters)
-        pprint(response)
-        return response
+        return response.get('questions', response)

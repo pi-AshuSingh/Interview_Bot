@@ -179,7 +179,8 @@ def check_answer():
         'question': current_question['question'],
         'selected_option': selected_option,
         'correct_option': correct_option,
-        'is_correct': is_correct
+        'is_correct': is_correct,
+        'explanation': current_question.get('explanation', 'No explanation provided.')
     })
     
     st.session_state.confidence_scores.append(confidence)
@@ -279,10 +280,31 @@ def display_summary():
             else:
                 st.error(f"❌ Your answer: {ans['selected_option']}")
                 st.info(f"💡 Correct answer: {ans['correct_option']}")
+            st.markdown(f"**Explanation:** {ans['explanation']}")
                 
     st.write("")
+    
+    # 📄 Export Report Feature
+    report_lines = [f"# Interview Prep Pro - Performance Report\n**Score:** {score_percentage}%\n\n"]
+    for i, ans in enumerate(st.session_state.user_answers):
+        report_lines.append(f"### Q{i+1}: {ans['question']}")
+        report_lines.append(f"- **Your Answer:** {ans['selected_option']} " + ("✅" if ans['is_correct'] else "❌"))
+        if not ans['is_correct']:
+            report_lines.append(f"- **Correct Answer:** {ans['correct_option']}")
+        report_lines.append(f"\n**Explanation:** {ans['explanation']}\n---")
+    
+    report_text = "\n".join(report_lines)
+    
     btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
     with btn_col1:
+        st.download_button(
+            label="📄 Download Report",
+            data=report_text,
+            file_name="Interview_Prep_Report.md",
+            mime="text/markdown",
+            use_container_width=True
+        )
+    with btn_col2:
         if st.button("🔁 Retake Quiz", use_container_width=True):
             retake()
     with btn_col3:
