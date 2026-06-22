@@ -2,6 +2,8 @@
 
 An AI-powered interview preparation bot that generates customized Multiple Choice Questions (MCQs) for various tech domains, built with Streamlit, Groq, and Langchain.
 
+🌐 **Live Demo:** [shivaksh-interview-prep.streamlit.app](https://shivaksh-interview-prep.streamlit.app/)
+
 ## 🌟 Features
 - **Dynamic Content Generation:** Uses Groq's lightning-fast LLMs to generate high-quality questions on the fly.
 - **Customizable Difficulty:** Choose between Easy, Intermediate, Advanced, and Expert.
