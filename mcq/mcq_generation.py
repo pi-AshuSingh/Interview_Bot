@@ -14,6 +14,7 @@ class MCQ(BaseModel):
     question: str = Field(description="The statement of the question. Include Markdown code snippets if relevant.")
     options: list[Option] = Field(description="List of answer options with correctness indicated")
     explanation: str = Field(description="A concise 2-sentence explanation of why the correct option is right, and why the distractors are wrong.")
+    hint: str = Field(description="A subtle hint to help the user figure out the answer without giving it away directly.")
 
 class MCQGenerator:
     def __init__(self, api_key: str):
@@ -27,7 +28,7 @@ class MCQGenerator:
             max_tokens=8000,
         )
 
-    def generate(self, level: str, topic: str, number_of_questions: int):
+    def generate(self, level: str, topic: str, number_of_questions: int, resume_text: str = ""):
         generation_system_message_content = '''You are an expert in generating diverse and high-quality Multiple Choice Questions (MCQs) for interview preparation. 
         Your vast and comprehensive knowledge allows you to cover a wide range of topics without repetition. 
         You provide clear, concise, and relevant questions that are appropriately challenging based on the specified difficulty level. 
@@ -37,15 +38,15 @@ class MCQGenerator:
         **Generate Multiple Choice Questions (MCQs)**
 
         **Topic:** {topic}
-
         **Difficulty Level:** {level}
-
         **Number of questions:** {number_of_questions}
+        **Candidate Resume Text (Optional):** {resume_text}
 
         **Instructions:** Generate {number_of_questions} multiple-choice questions (MCQ) on the topic of {topic} at the specified difficulty level. 
+                        If a Candidate Resume Text is provided, tailor some of the questions to the specific tools, projects, or skills mentioned in the resume.
                         The questions should have four options, with one correct answer and three distractors. 
                         Whenever possible, include realistic code snippets in the question text using Markdown formatting (e.g. ```python ... ```).
-                        Provide a concise explanation for the correct answer.
+                        Provide a concise explanation for the correct answer, and a subtle hint.
                         Return a list of MCQs in JSON format.
                       
         ]
@@ -63,9 +64,9 @@ class MCQGenerator:
             
         parser = JsonOutputParser(pydantic_object=MCQList)
 
-        return self._completion(prompt_template, level, topic, number_of_questions, parser)
+        return self._completion(prompt_template, level, topic, number_of_questions, resume_text, parser)
 
-    def _completion(self, prompt, level, topic, number_of_questions, parser):
+    def _completion(self, prompt, level, topic, number_of_questions, resume_text, parser):
         temp = random.uniform(0.1, 1)
         llm = self.chat_model(temp)
         llm_chain = prompt | llm | parser
@@ -74,6 +75,7 @@ class MCQGenerator:
             'level': level,
             'topic': topic,
             'number_of_questions': number_of_questions,
+            'resume_text': resume_text,
             'format_instructions': parser.get_format_instructions()
         }
 

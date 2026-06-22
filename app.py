@@ -3,6 +3,8 @@ import streamlit.components.v1 as components
 import plotly.graph_objects as go
 from mcq.mcq_generation import MCQGenerator
 import time
+from PyPDF2 import PdfReader
+import urllib.parse
 
 st.set_page_config(page_title="Interview Prep Pro", page_icon="🚀", layout="centered")
 
@@ -26,7 +28,6 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
 
-    /* Glassmorphism for question card */
     .glass-card {
         background: rgba(22, 27, 34, 0.7);
         backdrop-filter: blur(16px);
@@ -47,7 +48,6 @@ st.markdown("""
         line-height: 1.5;
     }
 
-    /* Styling radio buttons as clickable modern blocks */
     div[role="radiogroup"] > label {
         background: rgba(255, 255, 255, 0.05);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -64,7 +64,6 @@ st.markdown("""
         transform: translateY(-2px);
     }
 
-    /* Primary Gradient Buttons */
     .stButton>button {
         background: linear-gradient(135deg, #6C63FF 0%, #3B33C3 100%);
         color: white;
@@ -83,7 +82,6 @@ st.markdown("""
         color: #fff;
     }
 
-    /* Completion header */
     .completion-header {
         font-size: 32px;
         font-weight: 800;
@@ -121,6 +119,11 @@ def initialize_state():
         'user_answers': [],
         'questions': [],
         'confidence_scores': [],
+        'show_hint': False,
+        'timer_mode': False,
+        'question_start_time': 0,
+        'session_scores': [],
+        'score_saved': False
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -131,6 +134,7 @@ initialize_state()
 def reset_state():
     for key in ['quiz_started', 'question_index', 'correct_answers', 'incorrect_answers', 'user_answers', 'questions', 'confidence_scores']:
         st.session_state[key] = False if isinstance(st.session_state[key], bool) else [] if isinstance(st.session_state[key], list) else 0
+    st.session_state.score_saved = False
     st.rerun()
 
 # 🔄 Retake quiz
@@ -141,22 +145,42 @@ def retake():
     st.session_state.incorrect_answers = 0
     st.session_state.user_answers = []
     st.session_state.confidence_scores = []
+    st.session_state.question_start_time = time.time()
+    st.session_state.score_saved = False
+    st.session_state.show_hint = False
     st.rerun()
 
+def extract_pdf_text(pdf_file):
+    try:
+        reader = PdfReader(pdf_file)
+        text = "".join(page.extract_text() for page in reader.pages if page.extract_text())
+        return text[:3000] # Limit tokens
+    except Exception:
+        return ""
+
 # 🧪 Start quiz
-def start_quiz():
+def start_quiz(resume_text=""):
     st.session_state.quiz_started = True
-    with st.spinner("🧠 Synthesizing premium questions..."):
+    st.session_state.score_saved = False
+    
+    full_topic = st.session_state.topic
+    if st.session_state.sub_topic:
+        full_topic += f" ({st.session_state.sub_topic})"
+        
+    with st.spinner("🧠 Synthesizing premium personalized questions..."):
         questions = mcq_generator.generate(
-            topic=st.session_state.topic,
+            topic=full_topic,
             level=st.session_state.difficulty_level,
             number_of_questions=st.session_state.num_questions,
+            resume_text=resume_text
         )
         if not questions:
             st.error("❌ Failed to generate questions. Please try again.")
             st.session_state.quiz_started = False
             return
+            
         st.session_state.questions = questions
+        st.session_state.question_start_time = time.time()
     st.rerun()
 
 # ✅ Check answer
@@ -166,18 +190,24 @@ def check_answer():
     selected_option = st.session_state.get(selected_key)
     confidence = st.session_state.get('confidence', 50)
     
-    if selected_option is None:
+    # Feature 4: Pressure Timer Logic
+    time_elapsed = time.time() - st.session_state.question_start_time
+    timed_out = False
+    if st.session_state.timer_mode and time_elapsed > 30:
+        timed_out = True
+        st.error(f"⏱️ Time out! You took {int(time_elapsed)} seconds (limit is 30s).")
+    elif selected_option is None:
         st.warning("Please select an option before submitting.", icon="⚠️")
         return
         
     current_question = st.session_state.questions[index]
     correct_option = next(opt['text'] for opt in current_question['options'] if opt['isCorrect'])
     
-    is_correct = (selected_option == correct_option)
+    is_correct = (selected_option == correct_option) and not timed_out
     
     st.session_state.user_answers.append({
         'question': current_question['question'],
-        'selected_option': selected_option,
+        'selected_option': "Time Out" if timed_out else selected_option,
         'correct_option': correct_option,
         'is_correct': is_correct,
         'explanation': current_question.get('explanation', 'No explanation provided.')
@@ -188,12 +218,16 @@ def check_answer():
     if is_correct:
         st.session_state.correct_answers += 1
         st.toast('Spot on! Excellent work.', icon='✅')
-    else:
+    elif not timed_out:
         st.session_state.incorrect_answers += 1
         st.toast('Not quite, but good effort!', icon='💡')
+    else:
+        st.session_state.incorrect_answers += 1
         
-    time.sleep(0.5) # Slight delay for UX
+    time.sleep(0.8) # Delay for UX
     st.session_state.question_index += 1
+    st.session_state.show_hint = False
+    st.session_state.question_start_time = time.time()
     st.rerun()
 
 # 💡 Show question
@@ -203,17 +237,44 @@ def show_question():
     current_question = st.session_state.questions[index]
     
     st.progress(index / total)
-    st.caption(f"QUESTION {index + 1} OF {total}")
+    
+    # Header: Question Num + Timer
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        st.caption(f"QUESTION {index + 1} OF {total}")
+    with col_b:
+        if st.session_state.timer_mode:
+            st.caption("⏱️ **Pressure Mode:** 30s limit per question")
+    
+    # Feature 3: TTS Audio Player via JS
+    tts_js = f"""
+    <script>
+        function speak() {{
+            let utterance = new SpeechSynthesisUtterance(`{current_question['question'].replace('`', '')}`);
+            speechSynthesis.speak(utterance);
+        }}
+    </script>
+    <button onclick="speak()" style="background:none; border:none; color:#6C63FF; cursor:pointer; font-size:16px;">
+        🔊 Read Aloud
+    </button>
+    """
     
     st.markdown(f'''
     <div class="glass-card">
+        {tts_js}
         <div class="question-text">{current_question["question"]}</div>
     </div>
     ''', unsafe_allow_html=True)
     
     options = [opt["text"] for opt in current_question['options']]
-    
     st.radio("Select your answer:", options, key=f'selected_option_{index}', label_visibility='collapsed')
+    
+    # Feature 2: Hint System
+    if st.button("💡 Need a Hint?"):
+        st.session_state.show_hint = True
+        
+    if st.session_state.show_hint:
+        st.info(f"**Hint:** {current_question.get('hint', 'Think carefully about the core concepts.')}")
     
     st.write("")
     st.slider("Confidence Level (%)", 0, 100, 50, key='confidence')
@@ -238,17 +299,29 @@ def display_summary():
     total = correct + incorrect
     score_percentage = round((correct / total) * 100, 1) if total > 0 else 0
     
+    # Feature 5: Track Session Scores
+    if not st.session_state.score_saved:
+        st.session_state.session_scores.append({
+            "topic": st.session_state.topic, 
+            "score": score_percentage, 
+            "level": st.session_state.difficulty_level
+        })
+        st.session_state.score_saved = True
+    
     # 🎯 Dashboard Metrics
     col1, col2, col3 = st.columns(3)
     col1.metric("Final Score", f"{score_percentage}%")
     col2.metric("Correct", correct)
     col3.metric("Needs Review", incorrect)
     
+    # Feature 6: Share Score
+    tweet_text = urllib.parse.quote(f"I just scored {score_percentage}% on the {st.session_state.difficulty_level} {st.session_state.topic} interview prep bot! 🚀 Try it out: https://shivaksh-interview-prep.streamlit.app/")
+    st.markdown(f"[🐦 Share your score on Twitter!](https://twitter.com/intent/tweet?text={tweet_text})")
+    
     st.divider()
     
     # 📈 Charts Layout
     chart_col1, chart_col2 = st.columns(2)
-    
     with chart_col1:
         st.markdown("#### Accuracy Breakdown")
         fig = go.Figure(data=[go.Pie(
@@ -257,12 +330,7 @@ def display_summary():
             hole=0.6,
             marker_colors=['#00C9FF', '#FF4B2B']
         )])
-        fig.update_layout(
-            margin=dict(t=20, b=20, l=20, r=20),
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font_color="#E6EDF3"
-        )
+        fig.update_layout(margin=dict(t=20, b=20, l=20, r=20), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#E6EDF3")
         st.plotly_chart(fig, use_container_width=True)
         
     with chart_col2:
@@ -292,18 +360,11 @@ def display_summary():
         if not ans['is_correct']:
             report_lines.append(f"- **Correct Answer:** {ans['correct_option']}")
         report_lines.append(f"\n**Explanation:** {ans['explanation']}\n---")
-    
     report_text = "\n".join(report_lines)
     
     btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
     with btn_col1:
-        st.download_button(
-            label="📄 Download Report",
-            data=report_text,
-            file_name="Interview_Prep_Report.md",
-            mime="text/markdown",
-            use_container_width=True
-        )
+        st.download_button(label="📄 Download Report", data=report_text, file_name="Interview_Prep_Report.md", mime="text/markdown", use_container_width=True)
     with btn_col2:
         if st.button("🔁 Retake Quiz", use_container_width=True):
             retake()
@@ -311,26 +372,83 @@ def display_summary():
         if st.button("🏠 Go Home", use_container_width=True):
             reset_state()
 
-# 🧠 Main logic
+# 🧠 Main logic - Home Page
 if not st.session_state.quiz_started:
     st.markdown(
         """
-        <div style="text-align: center; padding-top: 40px; padding-bottom: 40px;">
+        <div style="text-align: center; padding-top: 20px; padding-bottom: 20px;">
             <h1 style="font-size: 3rem; font-weight: 800; margin-bottom: 0px;">Shivaksh Interview Prep</h1>
             <p style="font-size: 1.2rem; color: #8B949E;">Your AI-powered companion for mastering technical interviews.</p>
         </div>
         """, unsafe_allow_html=True
     )
     
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
+    # Tabs layout for Home Page
+    tab_quiz, tab_features, tab_leaderboard, tab_tips = st.tabs(["🚀 Start Quiz", "🌟 Features (New!)", "🏆 Session Leaderboard", "💡 Interview Tips"])
+    
+    with tab_quiz:
         with st.container(border=True):
-            st.session_state.topic = st.selectbox("📚 Choose your Domain", ['Deep Learning', 'Data Science', 'Machine Learning', 'Generative AI', 'Python Development', 'System Design'])
-            st.session_state.difficulty_level = st.selectbox("🎯 Difficulty Level", ['Easy', 'Intermediate', 'Advanced', 'Expert'])
-            st.session_state.num_questions = st.slider("🔢 Number of questions", 5, 30, 10, step=5)
+            col_t1, col_t2 = st.columns(2)
+            with col_t1:
+                st.session_state.topic = st.selectbox("📚 Domain", ['Deep Learning', 'Data Science', 'Machine Learning', 'Generative AI', 'Python Development', 'System Design'])
+            with col_t2:
+                # Feature 7: Sub-topic Drilldown
+                st.session_state.sub_topic = st.text_input("🔬 Specific Sub-topic (Optional)", placeholder="e.g. Pandas, Neural Nets")
+            
+            col_l1, col_l2 = st.columns(2)
+            with col_l1:
+                st.session_state.difficulty_level = st.selectbox("🎯 Difficulty Level", ['Easy', 'Intermediate', 'Advanced', 'Expert'])
+            with col_l2:
+                st.session_state.num_questions = st.slider("🔢 Number of questions", 5, 30, 10, step=5)
+            
+            st.divider()
+            # Feature 1: Resume Analyzer
+            st.markdown("#### 📄 Personalize with Resume (Optional)")
+            st.caption("Upload your resume and Groq will generate questions tailored to your exact skills!")
+            resume_file = st.file_uploader("Upload Resume (PDF)", type=['pdf'])
+            
+            # Feature 4: Timer Toggle
+            st.session_state.timer_mode = st.toggle("⏱️ Enable Pressure Timer (30s per question)")
+            
             st.write("")
-            if st.button("🚀 Start Quiz", use_container_width=True):
-                start_quiz()
+            if st.button("🚀 Start Quiz", use_container_width=True, type="primary"):
+                extracted_text = extract_pdf_text(resume_file) if resume_file else ""
+                start_quiz(extracted_text)
+                
+    with tab_features:
+        st.markdown("""
+        ### 🔥 The Award-Winning 10x Upgrade
+        We have added 10 incredible features to revolutionize your prep:
+        1. **📄 AI Resume Analyzer**: Upload your PDF resume to get perfectly tailored questions!
+        2. **💡 Interactive Hint System**: Get subtle nudges without spoiling the answer.
+        3. **🎙️ Text-to-Speech (TTS)**: Click the "Read Aloud" button for audio feedback.
+        4. **⏱️ Pressure Timer**: A strict 30-second countdown to simulate real interview stress.
+        5. **📈 Session Tracking**: Your scores are logged throughout your current session.
+        6. **🔗 Share Score**: Instantly tweet your high scores to your network.
+        7. **🎯 Sub-topic Drilldown**: Narrow down broad domains to specific frameworks.
+        8. **📚 Interview Tips**: Check the dedicated tips tab for advice.
+        9. **🏆 Session Leaderboard**: Compete against yourself with a tracked high-score board.
+        10. **🧠 AI Explanations**: Groq generates deep explanations for every correct/incorrect answer.
+        """)
+        
+    with tab_leaderboard:
+        if st.session_state.session_scores:
+            st.markdown("### 🏆 Your Session High Scores")
+            sorted_scores = sorted(st.session_state.session_scores, key=lambda x: x['score'], reverse=True)
+            for i, s in enumerate(sorted_scores):
+                st.metric(label=f"#{i+1} - {s['topic']} ({s['level']})", value=f"{s['score']}%")
+        else:
+            st.info("No scores yet. Complete a quiz to see your leaderboard!")
+            
+    with tab_tips:
+        st.markdown("""
+        ### 💡 Top Technical Interview Tips
+        - **Think Out Loud**: Communication is just as important as the correct answer. Tell the interviewer *how* you are solving the problem.
+        - **Clarify Requirements**: Never jump straight into coding or answering without clarifying edge cases first.
+        - **Admit When You Don't Know**: It's better to say "I'm not exactly sure, but here is how I would approach finding out..." than to guess wildly.
+        - **Review Fundamentals**: For advanced roles, you still need to know the absolute basics perfectly.
+        - **Use This App!**: Run the *Pressure Timer Mode* to get used to thinking under stress.
+        """)
 else:
     total = len(st.session_state.questions)
     index = st.session_state.question_index
