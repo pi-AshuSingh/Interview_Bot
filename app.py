@@ -8,7 +8,7 @@ GROQ_API = st.secrets["GROQ_API"]
 GOOGLE_API = st.secrets["GOOGLE_API"]
 
 # 🚀 Initialize MCQ generator
-mcq_generator = MCQGenerator(GOOGLE_API)
+mcq_generator = MCQGenerator(GROQ_API)
 
 # 🎨 Custom CSS
 st.markdown("""

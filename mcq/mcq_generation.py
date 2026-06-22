@@ -1,4 +1,4 @@
-from langchain_google_genai import GoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.output_parsers import JsonOutputParser
 from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
@@ -19,8 +19,8 @@ class MCQGenerator:
         self.api_key = api_key
 
     def chat_model(self, temperature: float):
-        return GoogleGenerativeAI(
-            model="gemini-2.0-flash",
+        return ChatGroq(
+            model="llama3-70b-8192",
             api_key=self.api_key,
             temperature=temperature,
             max_tokens=8000,
